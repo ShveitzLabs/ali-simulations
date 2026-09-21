@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.core import Person
-from ..auth.security import verify_password, create_access_token
+from ..auth.security import verify_password, create_access_token, hash_password
 from ..auth.dependencies import get_current_person
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -26,3 +26,20 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/me")
 def me(person: Person = Depends(get_current_person)):
     return {"id": str(person.id), "email": person.email, "first_name": person.first_name, "last_name": person.last_name, "is_platform_admin": person.is_platform_admin}
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@router.post("/change-password")
+def change_password(body: ChangePasswordRequest, person: Person = Depends(get_current_person), db: Session = Depends(get_db)):
+    if not person.password_hash or not verify_password(body.current_password, person.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if len(body.new_password) < 12:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 12 characters")
+    if body.new_password.lower() == "admin":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose a stronger password")
+    person.password_hash = hash_password(body.new_password)
+    person.must_change_password = False
+    db.commit()
+    return {"ok": True}

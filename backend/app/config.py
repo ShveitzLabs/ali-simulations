@@ -7,10 +7,10 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     access_token_minutes: int = 60
     frontend_url: str = "http://localhost:5173"
-    bootstrap_admin_email: str | None = None
-    bootstrap_admin_password: str | None = None
-    bootstrap_admin_first_name: str = "Platform"
-    bootstrap_admin_last_name: str = "Administrator"
+    bootstrap_admin_email: str | None = "jacob@providerenrichmentservices.org"
+    bootstrap_admin_password: str | None = "admin"
+    bootstrap_admin_first_name: str = "Jacob"
+    bootstrap_admin_last_name: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

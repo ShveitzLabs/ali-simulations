@@ -20,10 +20,6 @@ services:
         value: production
       - key: FRONTEND_URL
         value: https://ali-simulations.onrender.com
-      - key: BOOTSTRAP_ADMIN_EMAIL
-        sync: false
-      - key: BOOTSTRAP_ADMIN_PASSWORD
-        sync: false
 
 databases:
   - name: ali-simulations-db
