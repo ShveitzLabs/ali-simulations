@@ -14,10 +14,10 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-license_status = sa.Enum("active", "suspended", "expired", "trial", name="licensestatus")
-simulation_lifecycle = sa.Enum("development", "pilot", "available", "retired", name="simulationlifecycle")
-scenario_status = sa.Enum("draft", "testing", "published", "retired", name="scenariostatus")
-session_mode = sa.Enum("development", "production", name="sessionmode")
+license_status = postgresql.ENUM("active", "suspended", "expired", "trial", name="licensestatus", create_type=False)
+simulation_lifecycle = postgresql.ENUM("development", "pilot", "available", "retired", name="simulationlifecycle", create_type=False)
+scenario_status = postgresql.ENUM("draft", "testing", "published", "retired", name="scenariostatus", create_type=False)
+session_mode = postgresql.ENUM("development", "production", name="sessionmode", create_type=False)
 
 def upgrade():
     bind = op.get_bind()
