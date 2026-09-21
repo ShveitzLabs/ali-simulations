@@ -35,6 +35,7 @@ class Person(Base):
     normalized_email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
     first_name: Mapped[str] = mapped_column(String(120))
     last_name: Mapped[str] = mapped_column(String(120))
+    phone: Mapped[str | None] = mapped_column(String(40))
     password_hash: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -45,6 +46,8 @@ class Organization(Base):
     __tablename__ = "organizations"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(40))
     license_status: Mapped[LicenseStatus] = mapped_column(Enum(LicenseStatus), default=LicenseStatus.active, nullable=False)
     license_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     license_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
