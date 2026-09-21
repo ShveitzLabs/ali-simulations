@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..config import settings
-from ..models.core import Person, Role, Permission, RolePermission
+from ..models.core import Person, Role, Permission, RolePermission, SimulationType, SimulationLifecycle
 from ..auth.security import hash_password
 
 ROLE_NAMES = {
@@ -40,6 +40,10 @@ PERMISSIONS = {
 }
 
 def seed_core(db: Session):
+    for key, name in {"belonging":"Belonging Leadership Challenge", "citylab":"CityLab"}.items():
+        if not db.scalar(select(SimulationType).where(SimulationType.key == key)):
+            db.add(SimulationType(key=key, name=name, lifecycle=SimulationLifecycle.development))
+    db.commit()
     for key, name in ROLE_NAMES.items():
         if not db.scalar(select(Role).where(Role.key == key)):
             db.add(Role(key=key, name=name))

@@ -9,6 +9,7 @@ from .config import settings
 from .database import SessionLocal
 from .services.bootstrap import seed_core
 from .api.auth import router as auth_router
+from .api.platform import router as platform_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,15 +17,16 @@ async def lifespan(app: FastAPI):
         seed_core(db)
     yield
 
-app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=[settings.frontend_url], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(auth_router)
+app.include_router(platform_router)
 
 @app.get("/api/health")
 def health():
     with SessionLocal() as db:
         db.execute(text("SELECT 1"))
-    return {"status": "ok", "service": settings.app_name, "version": "0.2.0", "environment": settings.environment, "database": "connected"}
+    return {"status": "ok", "service": settings.app_name, "version": "0.4.0", "environment": settings.environment, "database": "connected"}
 
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if frontend_dist.exists():
