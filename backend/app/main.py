@@ -11,6 +11,7 @@ from .services.bootstrap import seed_core
 from .api.auth import router as auth_router
 from .api.platform import router as platform_router
 from .api.content import router as content_router
+from .api.operations import router as operations_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,11 +19,12 @@ async def lifespan(app: FastAPI):
         seed_core(db)
     yield
 
-app = FastAPI(title=settings.app_name, version="0.7.5", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.8.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=[settings.frontend_url], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(auth_router)
 app.include_router(platform_router)
 app.include_router(content_router)
+app.include_router(operations_router)
 
 @app.get("/api/health")
 def health():

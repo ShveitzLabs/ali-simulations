@@ -30,7 +30,8 @@ def me(person: Person = Depends(get_current_person), db: Session = Depends(get_d
     for membership,org in rows:
         roles=list(db.scalars(select(Role.name).join(MembershipRole,MembershipRole.role_id==Role.id).where(MembershipRole.membership_id==membership.id)).all())
         memberships.append({"organization_id":str(org.id),"organization_name":org.name,"roles":roles})
-    return {"id": str(person.id), "email": person.email, "first_name": person.first_name, "last_name": person.last_name, "is_platform_admin": person.is_platform_admin,"memberships":memberships}
+    role_keys=list(db.scalars(select(Role.key).join(MembershipRole,MembershipRole.role_id==Role.id).join(OrganizationMembership,OrganizationMembership.id==MembershipRole.membership_id).where(OrganizationMembership.person_id==person.id,OrganizationMembership.is_active==True)).all())
+    return {"id": str(person.id), "email": person.email, "first_name": person.first_name, "last_name": person.last_name, "is_platform_admin": person.is_platform_admin, "is_organization_admin": "organization_admin" in role_keys, "memberships":memberships}
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
@@ -48,3 +49,15 @@ def change_password(body: ChangePasswordRequest, person: Person = Depends(get_cu
     person.must_change_password = False
     db.commit()
     return {"ok": True}
+
+@router.post('/revert-impersonation')
+def revert_impersonation(credentials = Depends(__import__('app.auth.dependencies',fromlist=['bearer']).bearer), db: Session=Depends(get_db)):
+    from ..auth.security import decode_access_claims, create_access_token
+    import uuid
+    if not credentials: raise HTTPException(401,'Authentication required')
+    try: claims=decode_access_claims(credentials.credentials); actor=claims.get('actor')
+    except Exception: raise HTTPException(401,'Invalid token')
+    if not actor: raise HTTPException(400,'Not currently viewing as another user')
+    p=db.get(Person,uuid.UUID(actor))
+    if not p or not p.is_active: raise HTTPException(401,'Administrator account unavailable')
+    return {'access_token':create_access_token(str(p.id))}

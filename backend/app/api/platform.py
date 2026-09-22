@@ -192,7 +192,7 @@ def create_person(body: PersonIn, db: Session=Depends(get_db), person: Person=De
     p=Person(email=body.email.strip(),normalized_email=email,first_name=body.first_name.strip(),
              last_name=body.last_name.strip(),phone=body.phone,is_active=body.is_active,is_platform_admin=False)
     db.add(p); db.flush()
-    audit(db,person,"person.create","person",p.id,detail={"email":p.email})
+    audit(db,person,"person.create","person",p.id,detail={"email":p.email,"summary":f"{person.first_name} {person.last_name} created {p.first_name} {p.last_name}."})
     commit_or_500(db,"The person could not be saved.")
     db.refresh(p); return person_out(p,db)
 
@@ -212,7 +212,7 @@ def update_person(person_id: UUID, body: PersonIn, db: Session=Depends(get_db), 
     before={"first_name":p.first_name,"last_name":p.last_name,"email":p.email,"phone":p.phone,"is_active":p.is_active}
     p.first_name=body.first_name.strip();p.last_name=body.last_name.strip();p.email=body.email.strip()
     p.normalized_email=email;p.phone=body.phone;p.is_active=body.is_active
-    audit(db,person,"person.update","person",p.id,detail={"before":before,"after":body.model_dump()})
+    audit(db,person,"person.update","person",p.id,detail={"before":before,"after":body.model_dump(),"summary":f"{person.first_name} {person.last_name} updated {p.first_name} {p.last_name}."})
     commit_or_500(db,"The person changes could not be saved.")
     db.refresh(p); return person_out(p,db)
 
@@ -290,6 +290,39 @@ def set_entitlement(organization_id: UUID, simulation_type_id: UUID, body: Entit
     return {"enabled":x.enabled}
 
 @router.get("/audit")
-def audit_events(limit:int=50, db: Session=Depends(get_db), person: Person=Depends(require_platform_admin)):
-    rows=db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(min(limit,200))).all()
-    return [{"id":str(x.id),"action":x.action,"entity_type":x.entity_type,"entity_id":x.entity_id,"created_at":x.created_at,"detail":json.loads(x.detail_json or "{}") } for x in rows]
+def audit_events(page:int=1, page_size:int=25, db: Session=Depends(get_db), person: Person=Depends(require_platform_admin)):
+    page=max(page,1); page_size=min(max(page_size,1),25)
+    total=db.scalar(select(func.count()).select_from(AuditEvent)) or 0
+    rows=db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
+    items=[]
+    for x in rows:
+        detail=json.loads(x.detail_json or "{}")
+        actor=db.get(Person,x.actor_person_id) if x.actor_person_id else None
+        actor_name=f"{actor.first_name} {actor.last_name}" if actor else "System"
+        summary=detail.get("summary")
+        if not summary:
+            if x.entity_type=="person":
+                after=detail.get("after") or {}; before=detail.get("before") or {}; name=((after.get("first_name") or before.get("first_name") or "")+" "+(after.get("last_name") or before.get("last_name") or "")).strip() or detail.get("email") or "person"
+                changed=[k.replace("_"," ") for k in after if k in before and str(after.get(k))!=str(before.get(k))]
+                summary=f"{actor_name} updated {name}"+(f" — changed {', '.join(changed)}." if changed else ".") if x.action.endswith("update") else f"{actor_name} created {name}."
+            else: summary=f"{actor_name}: {x.action.replace('.', ' ')} ({x.entity_type})."
+        items.append({"id":str(x.id),"action":x.action,"summary":summary,"actor_name":actor_name,"entity_type":x.entity_type,"entity_id":x.entity_id,"organization_id":str(x.organization_id) if x.organization_id else None,"created_at":x.created_at,"detail":detail})
+    return {"items":items,"page":page,"page_size":page_size,"total":total,"pages":max(1,(total+page_size-1)//page_size)}
+
+class ImpersonateIn(BaseModel):
+    person_id: UUID
+
+@router.post('/impersonate')
+def impersonate(body: ImpersonateIn, db: Session=Depends(get_db), person: Person=Depends(get_current_person)):
+    from ..auth.security import create_impersonation_token
+    target=db.get(Person,body.person_id)
+    if not target or not target.is_active: raise HTTPException(404,'Active user not found')
+    allowed=person.is_platform_admin
+    if not allowed:
+        actor_orgs=set(db.scalars(select(OrganizationMembership.organization_id).join(MembershipRole,MembershipRole.membership_id==OrganizationMembership.id).join(Role,Role.id==MembershipRole.role_id).where(OrganizationMembership.person_id==person.id,OrganizationMembership.is_active==True,Role.key=='organization_admin')).all())
+        target_orgs=set(db.scalars(select(OrganizationMembership.organization_id).where(OrganizationMembership.person_id==target.id,OrganizationMembership.is_active==True)).all())
+        allowed=bool(actor_orgs & target_orgs)
+    if not allowed: raise HTTPException(403,'You may only view as a user within an organization you administer.')
+    audit(db,person,'impersonation.start','person',target.id,detail={'summary':f'{person.first_name} {person.last_name} began viewing the site as {target.first_name} {target.last_name}.','target_name':f'{target.first_name} {target.last_name}'})
+    db.commit()
+    return {'access_token':create_impersonation_token(str(target.id),str(person.id)),'viewing_as':f'{target.first_name} {target.last_name}'}

@@ -135,6 +135,10 @@ class Session(Base):
     is_development: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    template_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("program_templates.id"), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False, index=True)
+    team_count: Mapped[int] = mapped_column(default=2, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class AuditEvent(Base):
     __tablename__ = "audit_events"
@@ -248,3 +252,69 @@ class OutreachActivity(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     entered_by_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+# v0.8 reusable template -> organization session architecture
+class ProgramTemplate(Base):
+    __tablename__ = "program_templates"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    simulation_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("simulation_types.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    default_role_key: Mapped[str | None] = mapped_column(String(80), default="team_member")
+    role_assignment_mode: Mapped[str] = mapped_column(String(30), default="manual_default", nullable=False) # manual_default | auto_assign | manual_unassigned
+    max_teams: Mapped[int] = mapped_column(default=4, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False, index=True)
+    version: Mapped[int] = mapped_column(default=1, nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class SessionTeam(Base):
+    __tablename__ = "session_teams"
+    __table_args__ = (UniqueConstraint("session_id", "name"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    sort_order: Mapped[int] = mapped_column(default=1, nullable=False)
+
+class SessionParticipant(Base):
+    __tablename__ = "session_participants"
+    __table_args__ = (UniqueConstraint("session_id", "person_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("session_teams.id"), index=True)
+    current_role_key: Mapped[str | None] = mapped_column(String(80), default="team_member")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+class SessionRoleAssignment(Base):
+    __tablename__ = "session_role_assignments"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    role_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(200))
+    assigned_by_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id"))
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+class ConsentTemplate(Base):
+    __tablename__ = "consent_templates"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    version: Mapped[int] = mapped_column(default=1, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class ConsentRecord(Base):
+    __tablename__ = "consent_records"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("consent_templates.id"), nullable=False)
+    signer_type: Mapped[str] = mapped_column(String(20), nullable=False) # self | guardian
+    signer_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    signer_email: Mapped[str | None] = mapped_column(String(320))
+    status: Mapped[str] = mapped_column(String(30), default="signed", nullable=False)
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

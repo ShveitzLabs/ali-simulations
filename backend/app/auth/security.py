@@ -20,3 +20,11 @@ def create_access_token(person_id: str) -> str:
 def decode_access_token(token: str) -> str:
     payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
     return str(payload["sub"])
+
+def create_impersonation_token(person_id: str, actor_person_id: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {"sub": person_id, "actor": actor_person_id, "impersonating": True, "iat": now, "exp": now + timedelta(minutes=min(settings.access_token_minutes, 60))}
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+
+def decode_access_claims(token: str) -> dict:
+    return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
