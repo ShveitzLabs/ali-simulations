@@ -84,7 +84,10 @@ def sessions(organization_id:UUID|None=None,db:Session=Depends(get_db),p:Person=
     return [session_out(db,x) for x in db.scalars(stmt).all()]
 @router.post('/sessions',status_code=201)
 def session_create(b:SessionIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
-    require_org(db,p,b.organization_id);t=db.get(ProgramTemplate,b.template_id)
+    require_org(db,p,b.organization_id)
+    if not b.starts_at or not b.ends_at: raise HTTPException(400,'Session start and end date/time are required')
+    if b.ends_at <= b.starts_at: raise HTTPException(400,'Session end must be after session start')
+    t=db.get(ProgramTemplate,b.template_id)
     if not t or t.status!='available':raise HTTPException(400,'Template is not available')
     access=db.scalar(select(OrganizationSimulationAccess).where(OrganizationSimulationAccess.organization_id==b.organization_id,OrganizationSimulationAccess.simulation_type_id==t.simulation_type_id,OrganizationSimulationAccess.enabled==True))
     if not access and not p.is_platform_admin:raise HTTPException(403,'Organization is not entitled to this template')
