@@ -266,6 +266,7 @@ class ProgramTemplate(Base):
     status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False, index=True)
     version: Mapped[int] = mapped_column(default=1, nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    configuration_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class SessionTeam(Base):

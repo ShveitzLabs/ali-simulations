@@ -19,8 +19,12 @@ def require_org(db,p,oid):
 def log(db,p,action,etype,eid,oid,summary,detail=None): db.add(AuditEvent(organization_id=oid,actor_person_id=p.id,action=action,entity_type=etype,entity_id=str(eid),detail_json=json.dumps({'summary':summary,**(detail or {})},default=str)))
 
 class TemplateIn(BaseModel):
-    simulation_type_id:UUID; name:str=Field(min_length=2,max_length=200); description:str|None=None; default_role_key:str|None='team_member'; role_assignment_mode:str='manual_default'; max_teams:int=Field(default=4,ge=1,le=4); status:str='available'
-def template_out(x): return {'id':str(x.id),'simulation_type_id':str(x.simulation_type_id),'name':x.name,'description':x.description,'default_role_key':x.default_role_key,'role_assignment_mode':x.role_assignment_mode,'max_teams':x.max_teams,'status':x.status,'version':x.version,'archived_at':x.archived_at}
+    simulation_type_id:UUID; name:str=Field(min_length=2,max_length=200); description:str|None=None; default_role_key:str|None='team_member'; role_assignment_mode:str='manual_default'; max_teams:int=Field(default=4,ge=1,le=4); status:str='available'; configuration:dict=Field(default_factory=dict)
+def template_out(x):
+    try: config=json.loads(x.configuration_json) if x.configuration_json else {}
+    except Exception: config={}
+    return {'id':str(x.id),'simulation_type_id':str(x.simulation_type_id),'name':x.name,'description':x.description,'default_role_key':x.default_role_key,'role_assignment_mode':x.role_assignment_mode,'max_teams':x.max_teams,'status':x.status,'version':x.version,'archived_at':x.archived_at,'configuration':config}
+
 @router.get('/templates')
 def templates(db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
     xs=db.scalars(select(ProgramTemplate).order_by(ProgramTemplate.name)).all()
@@ -31,14 +35,15 @@ def templates(db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
 @router.post('/templates',status_code=201)
 def template_create(b:TemplateIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
     if not p.is_platform_admin:raise HTTPException(403,'Platform administrator access required')
-    x=ProgramTemplate(**b.model_dump());db.add(x);db.flush();log(db,p,'template.create','program_template',x.id,None,f'Created template “{x.name}”.');db.commit();return template_out(x)
+    data=b.model_dump(exclude={'configuration'});x=ProgramTemplate(**data,configuration_json=json.dumps(b.configuration));db.add(x);db.flush();log(db,p,'template.create','program_template',x.id,None,f'Created template “{x.name}”.');db.commit();return template_out(x)
 @router.put('/templates/{tid}')
 def template_update(tid:UUID,b:TemplateIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
     if not p.is_platform_admin:raise HTTPException(403,'Platform administrator access required')
     x=db.get(ProgramTemplate,tid)
     if not x:raise HTTPException(404,'Template not found')
     before=x.name
-    for k,v in b.model_dump().items():setattr(x,k,v)
+    for k,v in b.model_dump(exclude={'configuration'}).items():setattr(x,k,v)
+    x.configuration_json=json.dumps(b.configuration)
     x.version+=1;log(db,p,'template.update','program_template',x.id,None,f'Updated template “{x.name}” (version {x.version}).',{'previous_name':before});db.commit();return template_out(x)
 @router.delete('/templates/{tid}')
 def template_archive(tid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
@@ -49,6 +54,20 @@ def template_archive(tid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_cu
     if used:x.status='archived';x.archived_at=datetime.now(timezone.utc);summary=f'Archived template “{x.name}” because it has session history.'
     else: db.delete(x);summary=f'Deleted unused template “{x.name}”.'
     log(db,p,'template.archive' if used else 'template.delete','program_template',x.id,None,summary,{'sessions':used});db.commit();return {'ok':True,'archived':bool(used)}
+
+@router.get('/session-options')
+def session_options(db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
+    if p.is_platform_admin:
+        orgs=db.scalars(select(Organization).where(Organization.is_active==True).order_by(Organization.name)).all()
+    else:
+        admin_org_ids={m.organization_id for m,r in memberships(db,p) if r=='organization_admin'}
+        orgs=db.scalars(select(Organization).where(Organization.id.in_(admin_org_ids),Organization.is_active==True).order_by(Organization.name)).all() if admin_org_ids else []
+    result=[]
+    for o in orgs:
+        enabled=set(db.scalars(select(OrganizationSimulationAccess.simulation_type_id).where(OrganizationSimulationAccess.organization_id==o.id,OrganizationSimulationAccess.enabled==True)).all())
+        ts=db.scalars(select(ProgramTemplate).where(ProgramTemplate.status=='available',ProgramTemplate.simulation_type_id.in_(enabled)).order_by(ProgramTemplate.name)).all() if enabled else []
+        result.append({'id':str(o.id),'name':o.name,'templates':[template_out(t) for t in ts]})
+    return {'organizations':result}
 
 class SessionIn(BaseModel):
     organization_id:UUID; template_id:UUID; name:str; starts_at:datetime|None=None; ends_at:datetime|None=None; team_count:int=Field(default=2,ge=1,le=4); mode:str='production'
