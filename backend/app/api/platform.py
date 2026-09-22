@@ -321,7 +321,10 @@ def impersonate(body: ImpersonateIn, db: Session=Depends(get_db), person: Person
     if not allowed:
         actor_orgs=set(db.scalars(select(OrganizationMembership.organization_id).join(MembershipRole,MembershipRole.membership_id==OrganizationMembership.id).join(Role,Role.id==MembershipRole.role_id).where(OrganizationMembership.person_id==person.id,OrganizationMembership.is_active==True,Role.key=='organization_admin')).all())
         target_orgs=set(db.scalars(select(OrganizationMembership.organization_id).where(OrganizationMembership.person_id==target.id,OrganizationMembership.is_active==True)).all())
-        allowed=bool(actor_orgs & target_orgs)
+        allowed=bool(actor_orgs & target_orgs) and not target.is_platform_admin
+        if allowed:
+            target_admin_orgs=set(db.scalars(select(OrganizationMembership.organization_id).join(MembershipRole,MembershipRole.membership_id==OrganizationMembership.id).join(Role,Role.id==MembershipRole.role_id).where(OrganizationMembership.person_id==target.id,OrganizationMembership.is_active==True,Role.key=='organization_admin')).all())
+            allowed=not bool(target_admin_orgs - actor_orgs)
     if not allowed: raise HTTPException(403,'You may only view as a user within an organization you administer.')
     audit(db,person,'impersonation.start','person',target.id,detail={'summary':f'{person.first_name} {person.last_name} began viewing the site as {target.first_name} {target.last_name}.','target_name':f'{target.first_name} {target.last_name}'})
     db.commit()

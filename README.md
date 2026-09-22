@@ -19,3 +19,7 @@ The bootstrap account is only created if that email does not already exist. Do n
 
 ## Security
 Never commit `.env` or credentials. Admins will be able to reset passwords, but no role will ever be able to retrieve/view an existing password. License/access expiration fields default to `NULL` (no expiration). Scenario authoring remains Platform-Admin-only.
+
+
+## Current release
+v0.8.2 — Identity, Access, Privacy & Consent hardening. See RELEASE_v0.8.2.md.

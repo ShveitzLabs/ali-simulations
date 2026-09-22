@@ -41,6 +41,8 @@ class Person(Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    birth_month: Mapped[int | None] = mapped_column()
+    birth_year: Mapped[int | None] = mapped_column()
 
 class Organization(Base):
     __tablename__ = "organizations"
@@ -298,6 +300,18 @@ class SessionRoleAssignment(Base):
     effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+class PersonOrganizationContact(Base):
+    __tablename__ = "person_organization_contacts"
+    __table_args__ = (UniqueConstraint("person_id", "organization_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    supplied_by_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id"))
+    source: Mapped[str] = mapped_column(String(30), default="organization", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 class ConsentTemplate(Base):
     __tablename__ = "consent_templates"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -306,12 +320,13 @@ class ConsentTemplate(Base):
     version: Mapped[int] = mapped_column(default=1, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    requires_renewal: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class ConsentRecord(Base):
     __tablename__ = "consent_records"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id"), nullable=True, index=True)
     person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
     template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("consent_templates.id"), nullable=False)
     signer_type: Mapped[str] = mapped_column(String(20), nullable=False) # self | guardian
