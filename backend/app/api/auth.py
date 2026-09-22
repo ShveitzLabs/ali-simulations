@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models.core import Person
+from ..models.core import Person, Organization, OrganizationMembership, MembershipRole, Role
 from ..auth.security import verify_password, create_access_token, hash_password
 from ..auth.dependencies import get_current_person
 
@@ -24,8 +24,13 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     return {"access_token": create_access_token(str(person.id)), "token_type": "bearer", "must_change_password": person.must_change_password}
 
 @router.get("/me")
-def me(person: Person = Depends(get_current_person)):
-    return {"id": str(person.id), "email": person.email, "first_name": person.first_name, "last_name": person.last_name, "is_platform_admin": person.is_platform_admin}
+def me(person: Person = Depends(get_current_person), db: Session = Depends(get_db)):
+    rows=db.execute(select(OrganizationMembership,Organization).join(Organization,Organization.id==OrganizationMembership.organization_id).where(OrganizationMembership.person_id==person.id,OrganizationMembership.is_active==True)).all()
+    memberships=[]
+    for membership,org in rows:
+        roles=list(db.scalars(select(Role.name).join(MembershipRole,MembershipRole.role_id==Role.id).where(MembershipRole.membership_id==membership.id)).all())
+        memberships.append({"organization_id":str(org.id),"organization_name":org.name,"roles":roles})
+    return {"id": str(person.id), "email": person.email, "first_name": person.first_name, "last_name": person.last_name, "is_platform_admin": person.is_platform_admin,"memberships":memberships}
 
 class ChangePasswordRequest(BaseModel):
     current_password: str

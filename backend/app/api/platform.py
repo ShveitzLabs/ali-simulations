@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth.dependencies import get_current_person
+from ..auth.security import hash_password
 from ..models.core import (
     Person, Organization, OrganizationMembership, MembershipRole, Role,
     SimulationType, OrganizationSimulationAccess, AuditEvent,
@@ -67,6 +68,13 @@ def org_out(o):
         "license_status":o.license_status.value,"license_started_at":o.license_started_at,
         "license_expires_at":o.license_expires_at,"title":o.title,"tagline":o.tagline,
         "subscript":o.subscript,"logo_url":o.logo_url,"is_active":o.is_active}
+
+class MembershipIn(BaseModel):
+    organization_id: UUID
+    role_key: str = "participant"
+
+class ActivationIn(BaseModel):
+    temporary_password: str = Field(min_length=8, max_length=200)
 
 def person_out(p, db):
     memberships=[]
@@ -207,6 +215,56 @@ def update_person(person_id: UUID, body: PersonIn, db: Session=Depends(get_db), 
     audit(db,person,"person.update","person",p.id,detail={"before":before,"after":body.model_dump()})
     commit_or_500(db,"The person changes could not be saved.")
     db.refresh(p); return person_out(p,db)
+
+@router.get("/organizations/{organization_id}/people")
+def organization_people(organization_id: UUID, db: Session=Depends(get_db), person: Person=Depends(require_platform_admin)):
+    if not db.get(Organization, organization_id):
+        raise HTTPException(404,"Organization not found")
+    people=db.scalars(
+        select(Person).join(OrganizationMembership, OrganizationMembership.person_id==Person.id)
+        .where(OrganizationMembership.organization_id==organization_id, OrganizationMembership.is_active==True)
+        .order_by(Person.last_name,Person.first_name)
+    ).all()
+    return [person_out(p,db) for p in people]
+
+@router.post("/people/{person_id}/memberships", status_code=201)
+def add_membership(person_id: UUID, body: MembershipIn, db: Session=Depends(get_db), person: Person=Depends(require_platform_admin)):
+    target=db.get(Person,person_id); org=db.get(Organization,body.organization_id)
+    if not target or not org: raise HTTPException(404,"Person or organization not found")
+    role=db.scalar(select(Role).where(Role.key==body.role_key))
+    if not role: raise HTTPException(400,"Unknown organization role")
+    membership=db.scalar(select(OrganizationMembership).where(OrganizationMembership.person_id==person_id,OrganizationMembership.organization_id==body.organization_id))
+    if not membership:
+        membership=OrganizationMembership(person_id=person_id,organization_id=body.organization_id,is_active=True)
+        db.add(membership);db.flush()
+    else:
+        membership.is_active=True
+    if not db.scalar(select(MembershipRole).where(MembershipRole.membership_id==membership.id,MembershipRole.role_id==role.id)):
+        db.add(MembershipRole(membership_id=membership.id,role_id=role.id))
+    audit(db,person,"membership.enable","organization_membership",membership.id,org.id,{"person_id":person_id,"role":body.role_key})
+    commit_or_500(db,"The organization membership could not be saved.")
+    return person_out(target,db)
+
+@router.delete("/people/{person_id}/memberships/{organization_id}", status_code=204)
+def disable_membership(person_id: UUID, organization_id: UUID, db: Session=Depends(get_db), person: Person=Depends(require_platform_admin)):
+    membership=db.scalar(select(OrganizationMembership).where(OrganizationMembership.person_id==person_id,OrganizationMembership.organization_id==organization_id))
+    if not membership: raise HTTPException(404,"Organization membership not found")
+    membership.is_active=False
+    audit(db,person,"membership.disable","organization_membership",membership.id,organization_id,{"person_id":person_id})
+    commit_or_500(db,"The organization membership could not be disabled.")
+
+@router.post("/people/{person_id}/activate")
+def activate_person(person_id: UUID, body: ActivationIn, db: Session=Depends(get_db), person: Person=Depends(require_platform_admin)):
+    target=db.get(Person,person_id)
+    if not target: raise HTTPException(404,"Person not found")
+    if len(body.temporary_password) < 8:
+        raise HTTPException(400,"Temporary password must be at least 8 characters.")
+    target.password_hash=hash_password(body.temporary_password)
+    target.must_change_password=True
+    target.is_active=True
+    audit(db,person,"person.access.activate","person",target.id,detail={"email":target.email,"forced_password_change":True})
+    commit_or_500(db,"Platform access could not be enabled.")
+    return {"ok":True,"must_change_password":True}
 
 @router.get("/simulations")
 def simulations(db: Session=Depends(get_db), person: Person=Depends(require_platform_admin)):
