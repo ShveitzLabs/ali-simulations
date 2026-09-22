@@ -70,10 +70,10 @@ def session_options(db:Session=Depends(get_db),p:Person=Depends(get_current_pers
     return {'organizations':result}
 
 class SessionIn(BaseModel):
-    organization_id:UUID; template_id:UUID; name:str; starts_at:datetime|None=None; ends_at:datetime|None=None; team_count:int=Field(default=2,ge=1,le=4); mode:str='production'
+    organization_id:UUID; template_id:UUID; name:str; overview:str|None=None; starts_at:datetime|None=None; ends_at:datetime|None=None; team_count:int=Field(default=2,ge=1,le=4); mode:str='production'
 def session_out(db,x):
     teams=db.scalars(select(SessionTeam).where(SessionTeam.session_id==x.id).order_by(SessionTeam.sort_order)).all(); count=db.scalar(select(func.count()).select_from(SessionParticipant).where(SessionParticipant.session_id==x.id,SessionParticipant.is_active==True)) or 0
-    return {'id':str(x.id),'organization_id':str(x.organization_id),'template_id':str(x.template_id) if x.template_id else None,'name':x.name,'starts_at':x.starts_at,'ends_at':x.ends_at,'status':x.status,'team_count':x.team_count,'participant_count':count,'teams':[{'id':str(t.id),'name':t.name,'sort_order':t.sort_order} for t in teams]}
+    return {'id':str(x.id),'organization_id':str(x.organization_id),'template_id':str(x.template_id) if x.template_id else None,'name':x.name,'overview':x.overview,'starts_at':x.starts_at,'ends_at':x.ends_at,'status':x.status,'team_count':x.team_count,'participant_count':count,'teams':[{'id':str(t.id),'name':t.name,'sort_order':t.sort_order} for t in teams]}
 @router.get('/sessions')
 def sessions(organization_id:UUID|None=None,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
     stmt=select(ProgramSession).where(ProgramSession.template_id.is_not(None)).order_by(ProgramSession.starts_at.desc().nullslast(),ProgramSession.name)
@@ -88,11 +88,12 @@ def session_create(b:SessionIn,db:Session=Depends(get_db),p:Person=Depends(get_c
     if not t or t.status!='available':raise HTTPException(400,'Template is not available')
     access=db.scalar(select(OrganizationSimulationAccess).where(OrganizationSimulationAccess.organization_id==b.organization_id,OrganizationSimulationAccess.simulation_type_id==t.simulation_type_id,OrganizationSimulationAccess.enabled==True))
     if not access and not p.is_platform_admin:raise HTTPException(403,'Organization is not entitled to this template')
-    x=ProgramSession(organization_id=b.organization_id,simulation_type_id=t.simulation_type_id,template_id=t.id,name=b.name,starts_at=b.starts_at,ends_at=b.ends_at,team_count=b.team_count,status='draft',is_development=b.mode=='development');db.add(x);db.flush()
+    x=ProgramSession(organization_id=b.organization_id,simulation_type_id=t.simulation_type_id,template_id=t.id,name=b.name,overview=b.overview,starts_at=b.starts_at,ends_at=b.ends_at,team_count=b.team_count,status='draft',is_development=b.mode=='development');db.add(x);db.flush()
     for i in range(b.team_count):db.add(SessionTeam(session_id=x.id,name=f'Team {chr(65+i)}',sort_order=i+1))
     log(db,p,'session.create','session',x.id,x.organization_id,f'Created session “{x.name}” from template “{t.name}” with {b.team_count} teams.');db.commit();return session_out(db,x)
 
 class SessionPatch(BaseModel):
+    overview:str|None=None
     starts_at:datetime|None=None
     ends_at:datetime|None=None
 
@@ -103,8 +104,8 @@ def session_update(sid:UUID,b:SessionPatch,db:Session=Depends(get_db),p:Person=D
     require_org(db,p,s.organization_id)
     if s.status in ('closed','completed','archived') and not p.is_platform_admin:raise HTTPException(403,'Closed sessions are read-only')
     if b.starts_at and b.ends_at and b.ends_at<=b.starts_at:raise HTTPException(400,'Session end must be after session start')
-    s.starts_at=b.starts_at;s.ends_at=b.ends_at
-    log(db,p,'session.schedule.update','session',s.id,s.organization_id,f'Updated the schedule for “{s.name}”.',{'starts_at':s.starts_at,'ends_at':s.ends_at})
+    s.starts_at=b.starts_at;s.ends_at=b.ends_at;s.overview=b.overview
+    log(db,p,'session.schedule.update','session',s.id,s.organization_id,f'Updated Session details for “{s.name}”.',{'starts_at':s.starts_at,'ends_at':s.ends_at})
     db.commit();return session_out(db,s)
 
 class TeamPatch(BaseModel): name:str
@@ -113,6 +114,15 @@ def team_rename(sid:UUID,team_id:UUID,b:TeamPatch,db:Session=Depends(get_db),p:P
     s=db.get(ProgramSession,sid);team=db.get(SessionTeam,team_id)
     if not s or not team or team.session_id!=s.id:raise HTTPException(404,'Team not found')
     require_org(db,p,s.organization_id);old=team.name;team.name=b.name.strip();log(db,p,'team.rename','session_team',team.id,s.organization_id,f'Renamed {old} to {team.name} in “{s.name}”.');db.commit();return {'ok':True}
+@router.get('/sessions/{sid}/participant-candidates')
+def participant_candidates(sid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
+    s=db.get(ProgramSession,sid)
+    if not s: raise HTTPException(404,'Session not found')
+    require_org(db,p,s.organization_id)
+    assigned=set(db.scalars(select(SessionParticipant.person_id).where(SessionParticipant.session_id==sid,SessionParticipant.is_active==True)).all())
+    rows=db.execute(select(Person,OrganizationMembership).join(OrganizationMembership,OrganizationMembership.person_id==Person.id).where(OrganizationMembership.organization_id==s.organization_id,OrganizationMembership.is_active==True,Person.is_active==True).order_by(Person.last_name,Person.first_name)).all()
+    return [{'id':str(who.id),'name':f'{who.first_name} {who.last_name}','email':who.email} for who,m in rows if who.id not in assigned]
+
 class ParticipantIn(BaseModel): person_id:UUID; team_id:UUID|None=None
 @router.post('/sessions/{sid}/participants')
 def participant_add(sid:UUID,b:ParticipantIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):

@@ -133,6 +133,7 @@ class Session(Base):
     simulation_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("simulation_types.id"), nullable=False)
     scenario_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("scenario_versions.id"))
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    overview: Mapped[str | None] = mapped_column(Text)
     mode: Mapped[SessionMode] = mapped_column(Enum(SessionMode), default=SessionMode.production, nullable=False)
     is_development: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
