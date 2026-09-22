@@ -334,3 +334,78 @@ class ConsentRecord(Base):
     signer_email: Mapped[str | None] = mapped_column(String(320))
     status: Mapped[str] = mapped_column(String(30), default="signed", nullable=False)
     signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+# v0.9 session-native Belonging operations
+class SessionPartnerNeed(Base):
+    __tablename__ = "session_partner_needs"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("session_teams.id"), index=True)
+    category_key: Mapped[str | None] = mapped_column(String(80), index=True)
+    partner_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="normal", nullable=False)
+    target_quantity: Mapped[float | None] = mapped_column()
+    unit: Mapped[str | None] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(30), default="reported", nullable=False, index=True)
+    source_notes: Mapped[str | None] = mapped_column(Text)
+    entered_by_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False)
+    verified_by_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class SessionContribution(Base):
+    __tablename__ = "session_contributions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("session_teams.id"), index=True)
+    category_key: Mapped[str | None] = mapped_column(String(80), index=True)
+    contribution_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    donor_name: Mapped[str | None] = mapped_column(String(200))
+    quantity: Mapped[float | None] = mapped_column()
+    unit: Mapped[str | None] = mapped_column(String(40))
+    weight_lbs: Mapped[float | None] = mapped_column()
+    amount: Mapped[float | None] = mapped_column()
+    designation: Mapped[str | None] = mapped_column(String(200))
+    notes: Mapped[str | None] = mapped_column(Text)
+    qc_status: Mapped[str] = mapped_column(String(30), default="entered", nullable=False, index=True)
+    entered_by_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False)
+    verified_by_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class SessionOutreach(Base):
+    __tablename__ = "session_outreach"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("session_teams.id"), index=True)
+    contact_name: Mapped[str | None] = mapped_column(String(200))
+    organization_name: Mapped[str | None] = mapped_column(String(200))
+    method: Mapped[str] = mapped_column(String(50), default="other", nullable=False)
+    outcome: Mapped[str | None] = mapped_column(String(300))
+    follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notes: Mapped[str | None] = mapped_column(Text)
+    entered_by_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class SessionActivity(Base):
+    __tablename__ = "session_activities"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("session_teams.id"), index=True)
+    activity_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    quantity: Mapped[float | None] = mapped_column()
+    entered_by_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class SessionHandoff(Base):
+    __tablename__ = "session_handoffs"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    partner_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    impact_notes: Mapped[str | None] = mapped_column(Text)
+    entered_by_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
