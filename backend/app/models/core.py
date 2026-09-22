@@ -409,3 +409,33 @@ class SessionHandoff(Base):
     impact_notes: Mapped[str | None] = mapped_column(Text)
     entered_by_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+# v0.10 leadership development and evaluation
+class LeadershipEvaluation(Base):
+    __tablename__ = "leadership_evaluations"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    participant_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    evaluator_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    context: Mapped[str] = mapped_column(String(40), default="general", nullable=False)
+    scores_json: Mapped[str] = mapped_column(Text, nullable=False)
+    strength_narrative: Mapped[str] = mapped_column(Text, nullable=False)
+    growth_narrative: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_notes: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(30), default="submitted", nullable=False, index=True)
+    approved_by_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    released_by_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id"))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class LeadershipObservation(Base):
+    __tablename__ = "leadership_observations"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    participant_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    observer_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    capability_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    context: Mapped[str] = mapped_column(String(40), default="general", nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

@@ -20,6 +20,8 @@ def access(db,p,sid):
  is_admin=p.is_platform_admin or s.organization_id in admin_orgs(db,p)
  if not is_admin and not sp:raise HTTPException(403,'You are not assigned to this session')
  return s,sp,is_admin
+def ensure_writable(s,p):
+ if s.status in ('closed','completed','archived') and not p.is_platform_admin: raise HTTPException(403,'Closed sessions are read-only')
 def team_scope(stmt,sp,is_admin,col):
  return stmt if is_admin else stmt.where(col==sp.team_id)
 def audit(db,p,s,action,etype,eid,summary):db.add(AuditEvent(organization_id=s.organization_id,actor_person_id=p.id,action=action,entity_type=etype,entity_id=str(eid),detail_json=json.dumps({'summary':summary})))
@@ -48,9 +50,11 @@ def needs(sid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_perso
 @router.post('/{sid}/needs',status_code=201)
 def need_add(sid:UUID,b:NeedIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=access(db,p,sid);x=SessionPartnerNeed(session_id=sid,team_id=sp.team_id if sp else None,entered_by_person_id=p.id,**b.model_dump());db.add(x);db.flush();audit(db,p,s,'partner_need.create','session_partner_need',x.id,f'{p.first_name} {p.last_name} reported a partner need for {x.partner_name} in “{s.name}”.');db.commit();return {'id':str(x.id)}
+ ensure_writable(s,p)
 @router.post('/{sid}/needs/{nid}/verify')
 def need_verify(sid:UUID,nid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=access(db,p,sid)
+ ensure_writable(s,p)
  if not a:raise HTTPException(403,'Administrator verification required')
  x=db.get(SessionPartnerNeed,nid)
  if not x or x.session_id!=sid:raise HTTPException(404,'Need not found')
@@ -63,12 +67,14 @@ def contributions(sid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_curre
 @router.post('/{sid}/contributions',status_code=201)
 def contribution_add(sid:UUID,b:ContributionIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=access(db,p,sid)
+ ensure_writable(s,p)
  if b.contribution_type not in ('in_kind','monetary'):raise HTTPException(400,'Contribution must be in_kind or monetary')
  if b.contribution_type=='monetary' and (b.amount is None or b.amount<0):raise HTTPException(400,'Enter a valid donation amount')
  x=SessionContribution(session_id=sid,team_id=sp.team_id if sp else None,entered_by_person_id=p.id,**b.model_dump());db.add(x);db.flush();audit(db,p,s,'contribution.create','session_contribution',x.id,f'{p.first_name} {p.last_name} logged a {b.contribution_type.replace("_"," ")} contribution in “{s.name}”.');db.commit();return {'id':str(x.id)}
 @router.post('/{sid}/contributions/{cid}/verify')
 def contribution_verify(sid:UUID,cid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=access(db,p,sid);x=db.get(SessionContribution,cid)
+ ensure_writable(s,p)
  qc=sp and sp.current_role_key=='quality_control'
  if not a and not qc:raise HTTPException(403,'Quality Control or administrator access required')
  if not x or x.session_id!=sid or (not a and x.team_id!=sp.team_id):raise HTTPException(404,'Contribution not found')
@@ -81,6 +87,7 @@ def outreach(sid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_pe
 @router.post('/{sid}/outreach',status_code=201)
 def outreach_add(sid:UUID,b:OutreachIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=access(db,p,sid);x=SessionOutreach(session_id=sid,team_id=sp.team_id if sp else None,entered_by_person_id=p.id,**b.model_dump());db.add(x);db.flush();audit(db,p,s,'outreach.create','session_outreach',x.id,f'{p.first_name} {p.last_name} logged outreach to {x.organization_name or x.contact_name or "a contact"} in “{s.name}”.');db.commit();return {'id':str(x.id)}
+ ensure_writable(s,p)
 
 class ActivityIn(BaseModel):activity_type:str;title:str;description:str|None=None;quantity:float|None=None
 @router.get('/{sid}/activities')
@@ -89,6 +96,7 @@ def activities(sid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_
 @router.post('/{sid}/activities',status_code=201)
 def activity_add(sid:UUID,b:ActivityIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=access(db,p,sid);x=SessionActivity(session_id=sid,team_id=sp.team_id if sp else None,entered_by_person_id=p.id,**b.model_dump());db.add(x);db.flush();audit(db,p,s,'activity.create','session_activity',x.id,f'{p.first_name} {p.last_name} logged “{x.title}” in “{s.name}”.');db.commit();return {'id':str(x.id)}
+ ensure_writable(s,p)
 
 class HandoffIn(BaseModel):partner_name:str;delivered_at:datetime|None=None;summary:str;impact_notes:str|None=None
 @router.get('/{sid}/handoffs')
@@ -97,6 +105,7 @@ def handoffs(sid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_pe
 @router.post('/{sid}/handoffs',status_code=201)
 def handoff_add(sid:UUID,b:HandoffIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=access(db,p,sid)
+ ensure_writable(s,p)
  if not a:raise HTTPException(403,'Administrator access required for final handoff')
  x=SessionHandoff(session_id=sid,entered_by_person_id=p.id,**b.model_dump());db.add(x);db.flush();audit(db,p,s,'handoff.create','session_handoff',x.id,f'{p.first_name} {p.last_name} recorded a handoff to {x.partner_name} in “{s.name}”.');db.commit();return {'id':str(x.id)}
 
