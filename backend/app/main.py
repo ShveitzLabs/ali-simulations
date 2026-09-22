@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
         seed_core(db)
     yield
 
-app = FastAPI(title=settings.app_name, version="0.7.1", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.7.2", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=[settings.frontend_url], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(auth_router)
 app.include_router(platform_router)
@@ -28,7 +28,7 @@ app.include_router(content_router)
 def health():
     with SessionLocal() as db:
         db.execute(text("SELECT 1"))
-    return {"status": "ok", "service": settings.app_name, "version": "0.7.1", "environment": settings.environment, "database": "connected"}
+    return {"status": "ok", "service": settings.app_name, "version": "0.7.2", "environment": settings.environment, "database": "connected"}
 
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if frontend_dist.exists():
