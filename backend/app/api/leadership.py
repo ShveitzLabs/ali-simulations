@@ -31,8 +31,8 @@ def session_eval(sid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_curren
  q=select(LeadershipEvaluation).where(LeadershipEvaluation.session_id==sid)
  if not a:q=q.where((LeadershipEvaluation.evaluator_person_id==p.id)|((LeadershipEvaluation.participant_person_id==p.id)&(LeadershipEvaluation.status=='released')))
  es=db.scalars(q.order_by(LeadershipEvaluation.created_at.desc())).all()
- return {'session':{'id':str(s.id),'name':s.name,'status':s.status},'me_id':str(p.id),'can_evaluate':a,'participants':[{'id':str(x.person_id),'name':f'{who.first_name} {who.last_name}','role':x.current_role_key} for x,who in parts],'evaluations':[{'id':str(x.id),'participant_id':str(x.participant_person_id),'participant_name':nm(db,x.participant_person_id),'evaluator_name':nm(db,x.evaluator_person_id),'context':x.context,'scores':json.loads(x.scores_json),'strength':x.strength_narrative,'growth':x.growth_narrative,'evidence':x.evidence_notes,'status':x.status,'created_at':x.created_at} for x in es]}
-class EvalIn(BaseModel):participant_person_id:UUID;context:str='general';scores:dict[str,int];strength_narrative:str;growth_narrative:str;evidence_notes:str|None=None
+ return {'session':{'id':str(s.id),'name':s.name,'status':s.status},'me_id':str(p.id),'can_evaluate':a,'participants':[{'id':str(x.person_id),'name':f'{who.first_name} {who.last_name}','role':x.current_role_key} for x,who in parts],'evaluations':[{'id':str(x.id),'participant_id':str(x.participant_person_id),'participant_name':nm(db,x.participant_person_id),'evaluator_name':nm(db,x.evaluator_person_id),'context':x.context,'scores':json.loads(x.scores_json),'strength':x.strength_narrative,'growth':x.growth_narrative,'evidence':x.evidence_notes,'criteria_narratives':json.loads(x.criteria_narratives_json or '{}'),'status':x.status,'created_at':x.created_at} for x in es]}
+class EvalIn(BaseModel):participant_person_id:UUID;context:str='general';scores:dict[str,int];criteria_narratives:dict[str,str]={};strength_narrative:str;growth_narrative:str;evidence_notes:str|None=None
 @router.post('/session/{sid}/evaluations',status_code=201)
 def add_eval(sid:UUID,b:EvalIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=session_access(db,p,sid)
@@ -41,7 +41,7 @@ def add_eval(sid:UUID,b:EvalIn,db:Session=Depends(get_db),p:Person=Depends(get_c
  valid={k for k,_ in CAPABILITIES}
  if set(b.scores)!=valid or any(v<1 or v>5 for v in b.scores.values()):raise HTTPException(400,'Score all 12 leadership capabilities from 1 to 5')
  if not db.scalar(select(SessionParticipant.id).where(SessionParticipant.session_id==sid,SessionParticipant.person_id==b.participant_person_id)):raise HTTPException(400,'Participant is not assigned to this session')
- x=LeadershipEvaluation(session_id=sid,participant_person_id=b.participant_person_id,evaluator_person_id=p.id,context=b.context,scores_json=json.dumps(b.scores),strength_narrative=b.strength_narrative,growth_narrative=b.growth_narrative,evidence_notes=b.evidence_notes);db.add(x);db.flush();audit(db,p,s,'evaluation.submit',x.id,f'{p.first_name} {p.last_name} submitted a leadership evaluation for {nm(db,b.participant_person_id)} in “{s.name}”.');db.commit();return {'id':str(x.id)}
+ x=LeadershipEvaluation(session_id=sid,participant_person_id=b.participant_person_id,evaluator_person_id=p.id,context=b.context,scores_json=json.dumps(b.scores),strength_narrative=b.strength_narrative,growth_narrative=b.growth_narrative,evidence_notes=b.evidence_notes,criteria_narratives_json=json.dumps(b.criteria_narratives));db.add(x);db.flush();audit(db,p,s,'evaluation.submit',x.id,f'{p.first_name} {p.last_name} submitted a leadership evaluation for {nm(db,b.participant_person_id)} in “{s.name}”.');db.commit();return {'id':str(x.id)}
 @router.post('/session/{sid}/evaluations/{eid}/{action}')
 def workflow(sid:UUID,eid:UUID,action:str,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=session_access(db,p,sid)
@@ -76,22 +76,24 @@ from ..models.core import LeadershipPeerFeedback
 class PeerFeedbackIn(BaseModel):
  participant_person_id:UUID
  scores:dict[str,int|None]
+ criteria_narratives:dict[str,str]={}
  note:str|None=None
 
 @router.post('/session/{sid}/peer-feedback',status_code=201)
 def peer_feedback(sid:UUID,b:PeerFeedbackIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
  s,sp,a=session_access(db,p,sid)
- if not sp:raise HTTPException(403,'Participants may provide teammate feedback')
+ if not sp and not a:raise HTTPException(403,'Session participant or administrator access required')
  if s.status in ('closed','completed','archived'):raise HTTPException(403,'Closed sessions are read-only')
  if b.participant_person_id==p.id:raise HTTPException(400,'You cannot evaluate yourself')
  target=db.scalar(select(SessionParticipant).where(SessionParticipant.session_id==sid,SessionParticipant.person_id==b.participant_person_id,SessionParticipant.is_active==True))
- if not target or target.team_id!=sp.team_id:raise HTTPException(403,'Peer feedback is limited to your current teammates')
+ if not target:raise HTTPException(400,'Participant is not assigned to this session')
+ if sp and not a and target.team_id!=sp.team_id:raise HTTPException(403,'Peer feedback is limited to your current teammates')
  valid={k for k,_ in CAPABILITIES}
  if not set(b.scores).issubset(valid):raise HTTPException(400,'Unknown leadership capability')
  cleaned={k:v for k,v in b.scores.items() if v is not None}
  if any(v<1 or v>5 for v in cleaned.values()):raise HTTPException(400,'Ratings must be from 1 to 5')
  if not cleaned and not (b.note or '').strip():raise HTTPException(400,'Provide at least one rating or a feedback note')
- x=LeadershipPeerFeedback(session_id=sid,participant_person_id=b.participant_person_id,evaluator_person_id=p.id,scores_json=json.dumps(cleaned),note=(b.note or '').strip() or None)
+ x=LeadershipPeerFeedback(session_id=sid,participant_person_id=b.participant_person_id,evaluator_person_id=p.id,scores_json=json.dumps(cleaned),criteria_narratives_json=json.dumps(b.criteria_narratives),note=(b.note or '').strip() or None)
  db.add(x);db.flush();audit(db,p,s,'peer_feedback.submit',x.id,f'{p.first_name} {p.last_name} submitted teammate feedback in “{s.name}”.');db.commit();return {'id':str(x.id)}
 
 @router.get('/session/{sid}/peer-feedback')
@@ -99,7 +101,8 @@ def peer_feedback_summary(sid:UUID,db:Session=Depends(get_db),p:Person=Depends(g
  s,sp,a=session_access(db,p,sid)
  # participants see who they may rate and their own submission history; admins see aggregates.
  parts=db.execute(select(SessionParticipant,Person).join(Person,Person.id==SessionParticipant.person_id).where(SessionParticipant.session_id==sid,SessionParticipant.is_active==True)).all()
- if sp: parts=[(x,w) for x,w in parts if x.team_id==sp.team_id and x.person_id!=p.id]
+ if sp and not a: parts=[(x,w) for x,w in parts if x.team_id==sp.team_id and x.person_id!=p.id]
+ else: parts=[(x,w) for x,w in parts if x.person_id!=p.id]
  xs=db.scalars(select(LeadershipPeerFeedback).where(LeadershipPeerFeedback.session_id==sid)).all()
  if not a: xs=[x for x in xs if x.evaluator_person_id==p.id]
  aggregates={}
@@ -117,4 +120,4 @@ def peer_feedback_summary(sid:UUID,db:Session=Depends(get_db),p:Person=Depends(g
     vals=[sum(v)/len(v) for (eid,key),v in evaluator_means.items() if key==k]
     cap[k]=round(sum(vals)/len(vals),2) if vals else None
    aggregates[str(pid)]=cap
- return {'can_submit':sp is not None and s.status not in ('closed','completed','archived'),'participants':[{'id':str(x.person_id),'name':f'{who.first_name} {who.last_name}','role':x.current_role_key} for x,who in parts],'my_feedback':[{'id':str(x.id),'participant_id':str(x.participant_person_id),'scores':json.loads(x.scores_json),'note':x.note,'created_at':x.created_at} for x in xs],'aggregates':aggregates}
+ return {'can_submit':(sp is not None or a) and s.status not in ('closed','completed','archived'),'participants':[{'id':str(x.person_id),'name':f'{who.first_name} {who.last_name}','role':x.current_role_key} for x,who in parts],'my_feedback':[{'id':str(x.id),'participant_id':str(x.participant_person_id),'scores':json.loads(x.scores_json),'criteria_narratives':json.loads(x.criteria_narratives_json or '{}'),'note':x.note,'created_at':x.created_at} for x in xs],'aggregates':aggregates}

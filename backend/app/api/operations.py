@@ -91,6 +91,22 @@ def session_create(b:SessionIn,db:Session=Depends(get_db),p:Person=Depends(get_c
     x=ProgramSession(organization_id=b.organization_id,simulation_type_id=t.simulation_type_id,template_id=t.id,name=b.name,starts_at=b.starts_at,ends_at=b.ends_at,team_count=b.team_count,status='draft',is_development=b.mode=='development');db.add(x);db.flush()
     for i in range(b.team_count):db.add(SessionTeam(session_id=x.id,name=f'Team {chr(65+i)}',sort_order=i+1))
     log(db,p,'session.create','session',x.id,x.organization_id,f'Created session “{x.name}” from template “{t.name}” with {b.team_count} teams.');db.commit();return session_out(db,x)
+
+class SessionPatch(BaseModel):
+    starts_at:datetime|None=None
+    ends_at:datetime|None=None
+
+@router.put('/sessions/{sid}')
+def session_update(sid:UUID,b:SessionPatch,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
+    s=db.get(ProgramSession,sid)
+    if not s:raise HTTPException(404,'Session not found')
+    require_org(db,p,s.organization_id)
+    if s.status in ('closed','completed','archived') and not p.is_platform_admin:raise HTTPException(403,'Closed sessions are read-only')
+    if b.starts_at and b.ends_at and b.ends_at<=b.starts_at:raise HTTPException(400,'Session end must be after session start')
+    s.starts_at=b.starts_at;s.ends_at=b.ends_at
+    log(db,p,'session.schedule.update','session',s.id,s.organization_id,f'Updated the schedule for “{s.name}”.',{'starts_at':s.starts_at,'ends_at':s.ends_at})
+    db.commit();return session_out(db,s)
+
 class TeamPatch(BaseModel): name:str
 @router.put('/sessions/{sid}/teams/{team_id}')
 def team_rename(sid:UUID,team_id:UUID,b:TeamPatch,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):

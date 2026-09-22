@@ -1,3 +1,7 @@
+# ALI Simulations v0.10.2
+
+Current build: Identity Cues, Session Administration & Narrative Feedback.
+
 # ALI Simulations v0.2 — Authentication + Core Database
 
 React + TypeScript frontend, FastAPI backend, PostgreSQL, SQLAlchemy and Alembic.
