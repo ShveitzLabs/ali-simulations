@@ -206,7 +206,7 @@ def scoped_people(q:str|None=None,db:Session=Depends(get_db),p:Person=Depends(ge
     if not p.is_platform_admin:
         ids=admin_org_ids(db,p)
         if not ids: raise HTTPException(403,'Organization Administrator access required')
-        stmt=stmt.join(OrganizationMembership,OrganizationMembership.person_id==Person.id).where(OrganizationMembership.organization_id.in_(ids)).distinct()
+        stmt=stmt.join(OrganizationMembership,OrganizationMembership.person_id==Person.id).where(OrganizationMembership.organization_id.in_(ids),OrganizationMembership.is_active==True).distinct()
     if q and q.strip():
         term=f"%{q.strip().lower()}%"; stmt=stmt.where(func.lower(Person.first_name+' '+Person.last_name).like(term))
     return [scoped_person_out(db,x,p) for x in db.scalars(stmt.order_by(Person.last_name,Person.first_name)).all()]

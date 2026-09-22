@@ -403,6 +403,7 @@ class SessionHandoff(Base):
     __tablename__ = "session_handoffs"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("session_teams.id"), index=True)
     partner_name: Mapped[str] = mapped_column(String(200), nullable=False)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     summary: Mapped[str] = mapped_column(Text, nullable=False)
@@ -438,4 +439,15 @@ class LeadershipObservation(Base):
     capability_key: Mapped[str] = mapped_column(String(80), nullable=False)
     context: Mapped[str] = mapped_column(String(40), default="general", nullable=False)
     note: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+# v0.10.1 participant peer feedback
+class LeadershipPeerFeedback(Base):
+    __tablename__ = "leadership_peer_feedback"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    participant_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    evaluator_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    scores_json: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
