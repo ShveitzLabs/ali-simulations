@@ -46,3 +46,6 @@ main:has(.sessionhero) .metrics{margin:0 0 10px;gap:10px}
 main:has(.sessionhero) .metric{padding:14px}
 main:has(.sessionhero) .metric strong{font-size:24px;margin:4px 0}
 @media(max-width:1099px){main:has(.sessionhero){height:auto;min-height:100vh;overflow:visible}main:has(.sessionhero)>.sessionhero{max-height:none;grid-template-columns:1fr}main:has(.sessionhero)>.dashboardwithfeed{overflow:visible}.sessionoverview{border-left:0;border-top:2px solid #dbe3ea;padding:8px 0 0}}
+/* v0.10.7 restore prominent Session title while preserving compact viewport-first header */
+.sessionhero .sessiontitle{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow:hidden;text-overflow:ellipsis;font-size:22px;line-height:1.08;font-weight:800;color:#14233a;margin:2px 0 3px;max-width:100%}
+main:has(.sessionhero)>.sessionhero{max-height:112px}
