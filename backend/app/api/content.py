@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID as PyUUID
 from datetime import datetime
 from fastapi import APIRouter,Depends,HTTPException
 from pydantic import BaseModel,EmailStr,Field
@@ -17,7 +17,7 @@ def admin(p=Depends(get_current_person)):
 def org_ids(db,p): return set(db.scalars(select(OrganizationMembership.organization_id).where(OrganizationMembership.person_id==p.id,OrganizationMembership.is_active==True)).all())
 def c_out(c): return {k:getattr(c,k) for k in ["id","scope","first_name","last_name","title","company","email","phone","notes","connection_context","future_outreach_consent","organization_id","session_id"]}
 class ContactIn(BaseModel):
-    first_name:str;last_name:str;title:str|None=None;company:str|None=None;email:EmailStr|None=None;phone:str|None=None;notes:str|None=None;connection_context:str|None=None;future_outreach_consent:bool=False;scope:str="personal";organization_id:UUID | None=None;session_id:UUID | None=None
+    first_name:str;last_name:str;title:str|None=None;company:str|None=None;email:EmailStr|None=None;phone:str|None=None;notes:str|None=None;connection_context:str|None=None;future_outreach_consent:bool=False;scope:str="personal";organization_id:PyUUID | None=None;session_id:PyUUID | None=None
 @router.get("/contacts")
 def contacts(q:str|None=None,scope:str|None=None,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
     ids=org_ids(db,p); cond=[Contact.owner_person_id==p.id]
@@ -46,12 +46,12 @@ def add_contact(b:ContactIn,db:Session=Depends(get_db),p:Person=Depends(get_curr
     if b.scope!="personal" and not p.is_platform_admin: raise HTTPException(403,"Only administrators can create shared contacts")
     c=Contact(**b.model_dump(),owner_person_id=p.id if b.scope=="personal" else None,created_by_person_id=p.id);db.add(c);db.commit();db.refresh(c);return c_out(c)
 @router.delete("/contacts/{cid}",status_code=204)
-def del_contact(cid:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
+def del_contact(cid:PyUUID,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
     c=db.get(Contact,cid)
     if not c or (c.owner_person_id!=p.id and not p.is_platform_admin): raise HTTPException(404,"Contact not found")
     c.is_active=False;db.commit()
 
-class PartnerIn(BaseModel): name:str;organization_id:UUID;description:str|None=None;email:EmailStr|None=None;phone:str|None=None
+class PartnerIn(BaseModel): name:str;organization_id:PyUUID;description:str|None=None;email:EmailStr|None=None;phone:str|None=None
 @router.get("/partners")
 def partners(db:Session=Depends(get_db),p:Person=Depends(admin)):
     return [{"id":x.id,"organization_id":x.organization_id,"name":x.name,"description":x.description,"email":x.email,"phone":x.phone,"is_active":x.is_active} for x in db.scalars(select(CommunityPartner).order_by(CommunityPartner.name)).all()]
@@ -59,7 +59,7 @@ def partners(db:Session=Depends(get_db),p:Person=Depends(admin)):
 def partner_add(b:PartnerIn,db:Session=Depends(get_db),p:Person=Depends(admin)):
     x=CommunityPartner(**b.model_dump());db.add(x);db.commit();db.refresh(x);return {"id":x.id,"name":x.name}
 
-class ChallengeIn(BaseModel): name:str;organization_id:UUID;community_partner_id:UUID | None=None;description:str|None=None;starts_at:datetime|None=None;ends_at:datetime|None=None;categories:list[str]=Field(default_factory=lambda:["food"])
+class ChallengeIn(BaseModel): name:str;organization_id:PyUUID;community_partner_id:PyUUID | None=None;description:str|None=None;starts_at:datetime|None=None;ends_at:datetime|None=None;categories:list[str]=Field(default_factory=lambda:["food"])
 @router.get("/belonging/library")
 def library(p:Person=Depends(get_current_person)):
     return {"framework":["VOICE","CHOICE","AGENCY","IMPACT"],"categories":[{"key":k,"name":n} for k,n in CATEGORY_LIBRARY]+[{"key":"custom","name":"Other / Custom"}],"roles":ROLE_KEYS}
@@ -76,16 +76,16 @@ def challenge_add(b:ChallengeIn,db:Session=Depends(get_db),p:Person=Depends(admi
     for k in b.categories:
         db.add(CollectionCategory(challenge_id=x.id,key=k,name=names.get(k,"Custom Collection"),monetary_enabled=True))
     db.add_all([ChallengeTeam(challenge_id=x.id,name="Team A"),ChallengeTeam(challenge_id=x.id,name="Team B")]);db.commit();db.refresh(x);return {"id":x.id,"name":x.name}
-class TxIn(BaseModel): challenge_id:UUID;team_id:UUID | None=None;category_id:UUID | None=None;contribution_type:str;subcategory:str|None=None;quantity:str|None=None;amount:str|None=None;donor_name:str|None=None;designation:str|None=None;qc_status:str="pending";notes:str|None=None
+class TxIn(BaseModel): challenge_id:PyUUID;team_id:PyUUID | None=None;category_id:PyUUID | None=None;contribution_type:str;subcategory:str|None=None;quantity:str|None=None;amount:str|None=None;donor_name:str|None=None;designation:str|None=None;qc_status:str="pending";notes:str|None=None
 @router.post("/belonging/collections",status_code=201)
 def tx_add(b:TxIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
     if b.contribution_type not in ("in_kind","monetary"): raise HTTPException(400,"Contribution type must be in_kind or monetary")
     x=CollectionTransaction(**b.model_dump(),entered_by_person_id=p.id);db.add(x);db.commit();db.refresh(x);return {"id":x.id}
 @router.get("/belonging/collections/{challenge_id}")
-def tx_list(challenge_id:UUID,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
+def tx_list(challenge_id:PyUUID,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
     xs=db.scalars(select(CollectionTransaction).where(CollectionTransaction.challenge_id==challenge_id).order_by(CollectionTransaction.created_at.desc())).all()
     return [{k:getattr(x,k) for k in ["id","team_id","category_id","contribution_type","subcategory","quantity","amount","donor_name","designation","qc_status","notes","created_at"]} for x in xs]
-class OutreachIn(BaseModel): challenge_id:UUID;team_id:UUID | None=None;activity_type:str;contact_name:str|None=None;organization_name:str|None=None;outcome:str|None=None;notes:str|None=None
+class OutreachIn(BaseModel): challenge_id:PyUUID;team_id:PyUUID | None=None;activity_type:str;contact_name:str|None=None;organization_name:str|None=None;outcome:str|None=None;notes:str|None=None
 @router.post("/belonging/outreach",status_code=201)
 def outreach_add(b:OutreachIn,db:Session=Depends(get_db),p:Person=Depends(get_current_person)):
     x=OutreachActivity(**b.model_dump(),entered_by_person_id=p.id);db.add(x);db.commit();return {"id":x.id}
