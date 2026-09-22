@@ -146,3 +146,105 @@ class AuditEvent(Base):
     entity_id: Mapped[str | None] = mapped_column(String(100))
     detail_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class Contact(Base):
+    __tablename__ = "contacts"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id"), index=True)
+    linked_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id"), index=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizations.id"), index=True)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id"), index=True)
+    scope: Mapped[str] = mapped_column(String(30), nullable=False, default="personal", index=True)
+    first_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(160))
+    company: Mapped[str | None] = mapped_column(String(200))
+    email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    notes: Mapped[str | None] = mapped_column(Text)
+    connection_context: Mapped[str | None] = mapped_column(String(300))
+    future_outreach_consent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class CommunityPartner(Base):
+    __tablename__ = "community_partners"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+class BelongingChallenge(Base):
+    __tablename__ = "belonging_challenges"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id"), index=True)
+    community_partner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("community_partners.id"))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft", index=True)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class CollectionCategory(Base):
+    __tablename__ = "collection_categories"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    challenge_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("belonging_challenges.id"), nullable=False, index=True)
+    key: Mapped[str] = mapped_column(String(80), nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    unit: Mapped[str] = mapped_column(String(40), nullable=False, default="items")
+    goal_quantity: Mapped[str | None] = mapped_column(String(40))
+    monetary_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    monetary_goal: Mapped[str | None] = mapped_column(String(40))
+    acceptance_rules: Mapped[str | None] = mapped_column(Text)
+    priority: Mapped[str] = mapped_column(String(20), default="normal", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+class ChallengeTeam(Base):
+    __tablename__ = "challenge_teams"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    challenge_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("belonging_challenges.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+
+class ChallengeTeamMember(Base):
+    __tablename__ = "challenge_team_members"
+    __table_args__ = (UniqueConstraint("team_id", "person_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("challenge_teams.id"), nullable=False, index=True)
+    person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False, index=True)
+    role_key: Mapped[str] = mapped_column(String(80), nullable=False)
+
+class CollectionTransaction(Base):
+    __tablename__ = "collection_transactions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    challenge_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("belonging_challenges.id"), nullable=False, index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("challenge_teams.id"), index=True)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("collection_categories.id"), index=True)
+    contribution_type: Mapped[str] = mapped_column(String(20), nullable=False) # in_kind | monetary
+    subcategory: Mapped[str | None] = mapped_column(String(120))
+    quantity: Mapped[str | None] = mapped_column(String(40))
+    amount: Mapped[str | None] = mapped_column(String(40))
+    donor_name: Mapped[str | None] = mapped_column(String(200))
+    designation: Mapped[str | None] = mapped_column(String(200))
+    qc_status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending")
+    notes: Mapped[str | None] = mapped_column(Text)
+    entered_by_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class OutreachActivity(Base):
+    __tablename__ = "outreach_activities"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    challenge_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("belonging_challenges.id"), nullable=False, index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("challenge_teams.id"), index=True)
+    activity_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    contact_name: Mapped[str | None] = mapped_column(String(200))
+    organization_name: Mapped[str | None] = mapped_column(String(200))
+    outcome: Mapped[str | None] = mapped_column(String(300))
+    notes: Mapped[str | None] = mapped_column(Text)
+    entered_by_person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("people.id"), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
